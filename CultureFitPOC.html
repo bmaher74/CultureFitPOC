@@ -1,0 +1,618 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, 
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, ZAxis,
+  BarChart, Bar,
+  ResponsiveContainer, Tooltip, Legend 
+} from 'recharts';
+import { Sliders, Map, Target, Search, PlusCircle, Briefcase, Award, AlertTriangle, CheckCircle, Flag, UserPlus, X, Users, Brain, LayoutDashboard, UserCog, FileText, Sun, Moon } from 'lucide-react';
+
+// ============================================================================
+// 1. DATA LAYER & BENCHMARKS
+// ============================================================================
+const companyTargetCulture = { openness: 90, entrepreneurial: 85, integrity: 95, professionalism: 90, growthMindset: 90 };
+const teamAverageTraits = { openness: 75, entrepreneurial: 70, integrity: 85, professionalism: 88, growthMindset: 75 };
+const companyDISCBenchmark = { dominance: 70, influence: 65, steadiness: 60, compliance: 85 };
+
+const initialCandidates = [
+  { 
+    id: 'uuid-1', source: 'internal',
+    personalInfo: { fullName: 'Alice Chen', title: 'Regional Sales Director', location: 'Singapore', headline: 'Driving cross-functional enterprise sales and shaping revenue growth in SEA to ensure customer success.', company: 'Brenntag', tenure: 4, industry: 'Chemicals' }, 
+    scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: { technical: 85, industry: 95, leadership: 90 }, totalWeighted: 0, rawTraits: { openness: 75, integrity: 85, entrepreneurial: 80, professionalism: 90 } }, 
+    discProfile: { dominance: 85, influence: 90, steadiness: 30, compliance: 40 }, 
+    values: { Customer: 95, Group: 80, Individual: 90 }, mindset: 'Neutral' 
+  },
+  { 
+    id: 'uuid-2', source: 'external',
+    personalInfo: { fullName: 'Bob Smith', title: 'Senior Solutions Architect', location: 'Hong Kong', headline: 'Building robust cloud infrastructure and driving digital transformation for financial institutions.', company: 'IBM', tenure: 5, industry: 'Banking' }, 
+    scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: { technical: 98, industry: 85, leadership: 75 }, totalWeighted: 0, rawTraits: { openness: 70, integrity: 85, entrepreneurial: 60, professionalism: 85 } }, 
+    discProfile: { dominance: 40, influence: 30, steadiness: 80, compliance: 95 }, 
+    values: { Customer: 85, Group: 90, Individual: 70 }, mindset: 'Neutral' 
+  },
+  { 
+    id: 'uuid-3', source: 'external',
+    personalInfo: { fullName: 'Jane Tao', title: 'Founder & Country Manager', location: 'Vietnam', headline: 'Pivoted business strategy to capture emerging markets. Adaptive leader.', company: 'Startup Inc', tenure: 2, industry: 'E-commerce' }, 
+    scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: { technical: 70, industry: 80, leadership: 95 }, totalWeighted: 0, rawTraits: { openness: 85, integrity: 80, entrepreneurial: 85, professionalism: 85 } }, 
+    discProfile: { dominance: 90, influence: 85, steadiness: 40, compliance: 50 }, 
+    values: { Customer: 80, Group: 85, Individual: 95 }, mindset: 'Neutral' 
+  },
+  { 
+    id: 'uuid-4', source: 'internal',
+    personalInfo: { fullName: 'Diana Lee', title: 'Talent Acquisition Lead', location: 'Singapore', headline: 'Designed new onboarding frameworks to increase employee retention and foster partnership.', company: 'Brenntag', tenure: 3, industry: 'HR' }, 
+    scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: { technical: 80, industry: 95, leadership: 85 }, totalWeighted: 0, rawTraits: { openness: 80, integrity: 85, entrepreneurial: 70, professionalism: 85 } }, 
+    discProfile: { dominance: 30, influence: 85, steadiness: 95, compliance: 85 }, 
+    values: { Customer: 90, Group: 95, Individual: 60 }, mindset: 'Neutral' 
+  },
+  { 
+    id: 'uuid-5', source: 'external',
+    personalInfo: { fullName: 'Fiona Ng', title: 'Finance & Compliance Director', location: 'Singapore', headline: 'Ensured stringent regulatory compliance, audit, and governance across APAC regions. Bilingual.', company: 'Global FinTech', tenure: 6, industry: 'FinTech' }, 
+    scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: { technical: 90, industry: 95, leadership: 90 }, totalWeighted: 0, rawTraits: { openness: 60, integrity: 90, entrepreneurial: 40, professionalism: 90 } }, 
+    discProfile: { dominance: 50, influence: 20, steadiness: 70, compliance: 100 }, 
+    values: { Customer: 70, Group: 100, Individual: 50 }, mindset: 'Neutral' 
+  },
+  { 
+    id: 'uuid-6', source: 'external',
+    personalInfo: { fullName: 'Kevin Tan', title: 'Finance Associate', location: 'Singapore', headline: 'Managed ledgers and accounts.', company: 'Unknown', tenure: 1, industry: 'Logistics' }, 
+    scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: { technical: 65, industry: 50, leadership: 40 }, totalWeighted: 0, rawTraits: { openness: 50, integrity: 50, entrepreneurial: 50, professionalism: 50 } }, 
+    discProfile: { dominance: 50, influence: 50, steadiness: 50, compliance: 40 }, 
+    values: { Customer: 50, Group: 50, Individual: 80 }, mindset: 'Neutral' 
+  },
+];
+
+// ============================================================================
+// 2. INFERENCE ENGINE & LOGIC LAYER
+// ============================================================================
+const ScoringEngine = {
+  scanGrowthMindset: (text) => {
+    if (!text || text.trim() === '') return { score: 50, mindset: 'Fixed' }; 
+    const lowerText = text.toLowerCase();
+    let score = 50; 
+    const growthVerbs = ['building', 'driving', 'shaping', 'scale', 'transform', 'lead', 'pivot'];
+    growthVerbs.forEach(kw => { if (lowerText.includes(kw)) score += 15; });
+    
+    score = Math.min(score, 100);
+    let mindset = 'Neutral';
+    if (score >= 80) mindset = 'Growth';
+    else if (score < 60) mindset = 'Fixed';
+
+    return { score, mindset };
+  },
+
+  calculateMatch: (candidate, weights, market) => {
+    const { headline, title, company, tenure, industry } = candidate.personalInfo;
+    const hasNoData = !headline || headline.trim() === '';
+    const headlineStr = headline || '';
+    
+    const { score: growthMindsetScore, mindset } = ScoringEngine.scanGrowthMindset(headlineStr);
+    let traits = { ...candidate.scores.rawTraits };
+    
+    if (headlineStr.match(/cross-functional|adaptive|digital transformation|bilingual|trilingual/i)) traits.openness += 15;
+    if (title.match(/founder/i) || company.match(/microsoft|ibm/i)) traits.entrepreneurial += 15;
+    if (tenure >= 3 && industry.match(/fintech|banking/i)) {
+      traits.integrity += 10;
+      traits.professionalism += 10;
+    }
+
+    Object.keys(traits).forEach(k => traits[k] = Math.min(100, traits[k]));
+
+    let comps = { ...candidate.scores.competencies };
+    if (headlineStr.toLowerCase().includes('senior') || title.toLowerCase().includes('senior')) comps.leadership += 10;
+    if (headlineStr.match(/cloud|data|finance|compliance|audit/i)) comps.technical += 10;
+    if (tenure >= 4) comps.industry += 10;
+    
+    comps.leadership = Math.min(100, comps.leadership);
+    comps.technical = Math.min(100, comps.technical);
+    comps.industry = Math.min(100, comps.industry);
+    
+    let jobFit = (comps.technical + comps.industry + comps.leadership) / 3;
+    
+    let valuesFit = 75; 
+    if (headlineStr.match(/customer|success|partnership/i)) valuesFit += 15;
+
+    let cultureFit = (traits.openness + traits.entrepreneurial + growthMindsetScore) / 3;
+    
+    if (market === 'Singapore') {
+      traits.integrity = Math.min(100, traits.integrity * 1.15);
+      traits.professionalism = Math.min(100, traits.professionalism * 1.15);
+      
+      if (title.match(/finance|ta|talent acquisition/i)) {
+        if (candidate.discProfile.compliance > 75) {
+           jobFit += 15; 
+           comps.technical += 10; 
+           cultureFit += 10;
+        } else {
+           jobFit -= 20; 
+           comps.technical -= 15;
+        }
+      }
+    } else if (market === 'Vietnam') {
+      traits.entrepreneurial = Math.min(100, traits.entrepreneurial * 1.15);
+      traits.openness = Math.min(100, traits.openness * 1.15); 
+    }
+
+    const total = (
+      (Math.min(100, jobFit) * (weights.job / 100)) + 
+      (Math.min(100, valuesFit) * (weights.values / 100)) + 
+      (Math.min(100, cultureFit) * (weights.culture / 100))
+    );
+
+    return {
+      ...candidate,
+      hasNoData,
+      mindset,
+      growthMindsetScore,
+      scores: {
+        cultureFit: Math.min(100, Math.round(cultureFit)),
+        valuesFit: Math.min(100, Math.round(valuesFit)),
+        jobFit: Math.min(100, Math.round(jobFit)),
+        competencies: {
+          technical: Math.min(100, Math.round(comps.technical)),
+          industry: Math.min(100, Math.round(comps.industry)),
+          leadership: Math.min(100, Math.round(comps.leadership))
+        },
+        totalWeighted: Math.min(100, Math.round(total)),
+        rawTraits: traits
+      }
+    };
+  },
+
+  generateRecommendation: (candidate) => {
+    const { discProfile, values, scores } = candidate;
+    let sentence1 = "";
+    let sentence2 = "";
+
+    if (discProfile.dominance > 75 && values.Group < 60) {
+      sentence1 = "Strong individual performance indicators (High D), but presents a potential organisational risk due to low alignment with 'Success of the Group' values.";
+    } else if (values.Customer >= 80 && values.Group >= 75) {
+      sentence1 = "Excellent alignment with primary organisational priorities, placing Customer and Group success at the forefront.";
+    } else if (discProfile.compliance > 80) {
+      sentence1 = "Highly structured and compliant profile, ensuring steady processes but may require support in highly ambiguous situations.";
+    } else {
+      sentence1 = "Demonstrates a moderate, balanced alignment with Brenntag's core behavioural priorities.";
+    }
+
+    if (scores.totalWeighted >= 85) {
+      sentence2 = "Highly recommended for immediate progression based on robust triple-fit alignment.";
+    } else if (scores.totalWeighted < 70) {
+      sentence2 = "Not recommended for immediate hire; significant gaps in either technical or cultural expectations.";
+    } else {
+      sentence2 = "Warrants a structured culture-fit interview to validate behavioural markers before a final decision.";
+    }
+
+    return `${sentence1} ${sentence2}`;
+  },
+
+  simulateNLPFeedback: (notes, currentTraits, currentDisc, currentValues) => {
+    const lowerNotes = notes.toLowerCase();
+    let newTraits = { ...currentTraits };
+    let newDisc = { ...currentDisc };
+    let newValues = { ...currentValues };
+
+    if (lowerNotes.includes('ignores group')) newValues.Group = Math.max(0, newValues.Group - 20);
+    if (lowerNotes.includes('solving problems')) { newDisc.dominance = Math.min(100, newDisc.dominance + 15); newDisc.compliance = Math.min(100, newDisc.compliance + 15); }
+
+    return { newTraits, newDisc, newValues };
+  }
+};
+
+// ============================================================================
+// 3. UI COMPONENTS
+// ============================================================================
+const ProgressBar = ({ label, value, colorClass }) => (
+  <div className="w-full mb-2">
+    <div className="flex justify-between text-xs mb-1">
+      <span className="text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">{label}</span>
+      <span className="text-slate-700 dark:text-slate-200 font-bold">{value}%</span>
+    </div>
+    <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5">
+      <div className={`h-1.5 rounded-full ${colorClass}`} style={{ width: `${value}%` }}></div>
+    </div>
+  </div>
+);
+
+// ============================================================================
+// 4. MAIN APP CONTROLLER
+// ============================================================================
+export default function App() {
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('themeMode');
+    return saved ? JSON.parse(saved) : false; // Default to Light Mode
+  });
+
+  const [weights, setWeights] = useState(() => {
+    const saved = localStorage.getItem('cultureFitWeights');
+    return saved ? JSON.parse(saved) : { culture: 33, values: 33, job: 34 };
+  });
+
+  useEffect(() => { localStorage.setItem('themeMode', JSON.stringify(isDarkMode)); }, [isDarkMode]);
+  useEffect(() => { localStorage.setItem('cultureFitWeights', JSON.stringify(weights)); }, [weights]);
+
+  const [candidates, setCandidates] = useState(initialCandidates);
+  const [market, setMarket] = useState('Global');
+  const [activeTab, setActiveTab] = useState('pipeline'); 
+  const [selectedCandidateId, setSelectedCandidateId] = useState(initialCandidates[0].id);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const processedCandidates = useMemo(() => {
+    return candidates
+      .map(c => ScoringEngine.calculateMatch(c, weights, market))
+      .sort((a, b) => b.scores.totalWeighted - a.scores.totalWeighted);
+  }, [candidates, weights, market]);
+
+  const displayList = activeTab === 'pipeline' 
+    ? processedCandidates 
+    : processedCandidates.filter(c => c.source === 'internal');
+
+  useEffect(() => {
+    if (!displayList.find(c => c.id === selectedCandidateId) && displayList.length > 0) {
+      setSelectedCandidateId(displayList[0].id);
+    }
+  }, [activeTab, displayList, selectedCandidateId]);
+
+  const selectedCandidate = displayList.find(c => c.id === selectedCandidateId) || displayList[0];
+
+  const scatterData = useMemo(() => processedCandidates.map(c => ({
+    name: c.personalInfo.fullName,
+    jobFit: c.scores.jobFit,
+    cultureFit: c.scores.cultureFit,
+    total: c.scores.totalWeighted,
+    source: c.source
+  })), [processedCandidates]);
+
+  const handleAddStaff = (newStaffData) => {
+    const newId = `uuid-new-${Date.now()}`;
+    const baseTraits = { openness: 70, integrity: 80, entrepreneurial: 60, professionalism: 80 };
+    const baseDisc = { dominance: 50, influence: 50, steadiness: 50, compliance: 50 };
+    const baseValues = { Customer: 80, Group: 80, Individual: 80 };
+    const baseCompetencies = { technical: 70, industry: 70, leadership: 60 };
+    
+    const nlpResults = ScoringEngine.simulateNLPFeedback(newStaffData.notes, baseTraits, baseDisc, baseValues);
+    const newStaff = {
+      id: newId, source: 'internal',
+      personalInfo: { fullName: newStaffData.fullName, title: newStaffData.title, headline: newStaffData.notes, location: 'Global', company: 'Internal', tenure: 1, industry: 'General' },
+      scores: { cultureFit: 0, valuesFit: 0, jobFit: 0, competencies: baseCompetencies, totalWeighted: 0, rawTraits: nlpResults.newTraits },
+      discProfile: nlpResults.newDisc, values: nlpResults.newValues, mindset: 'Neutral'
+    };
+    
+    setCandidates([...candidates, newStaff]);
+    setActiveTab('workspace');
+    setSelectedCandidateId(newId);
+    setIsModalOpen(false);
+  };
+
+  const CustomScatterTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-lg shadow-xl text-xs">
+          <p className="font-bold text-slate-900 dark:text-white mb-1">{data.name}</p>
+          <p className="text-slate-600 dark:text-slate-400">Technical Job Fit: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{data.jobFit}%</span></p>
+          <p className="text-slate-600 dark:text-slate-400">Cultural Alignment: <span className="text-purple-600 dark:text-purple-400 font-bold">{data.cultureFit}%</span></p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const ReviewModal = ({ isOpen, onClose }) => {
+    const [form, setForm] = useState({ fullName: '', title: '', notes: '' });
+    if (!isOpen) return null;
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (!form.fullName || !form.title) return;
+      handleAddStaff(form);
+      setForm({ fullName: '', title: '', notes: '' });
+    };
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-2xl w-full max-w-md relative">
+          <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-white"><X size={20}/></button>
+          <h2 className="text-xl font-bold flex items-center gap-2 mb-2 text-slate-900 dark:text-white">
+            <PlusCircle size={20} className="text-indigo-600 dark:text-indigo-500"/> Manager Review Parser
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">NLP Simulation: Extracts DISC, Values, and Growth Mindset from text.</p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input type="text" placeholder="Staff Name" required className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={form.fullName} onChange={e => setForm({...form, fullName: e.target.value})} />
+            <input type="text" placeholder="Current Role" required className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+            <textarea placeholder="Manager review notes..." required rows="4" className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}></textarea>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 dark:hover:bg-indigo-500 text-white py-3 rounded-lg font-bold transition-colors shadow-lg shadow-indigo-600/30">
+              Process & Add to Pipeline
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className={isDarkMode ? 'dark' : ''}>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-300 font-sans selection:bg-indigo-500/30 transition-colors duration-200">
+        
+        {/* HEADER */}
+        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 md:px-8 sticky top-0 z-40 transition-colors duration-200">
+          <div className="flex justify-between items-center max-w-[1600px] mx-auto">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3 transition-colors">
+                <Target className="text-indigo-600 dark:text-indigo-500" size={28} />
+                Business Management Module: Culture-Fit POC
+              </h1>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Light/Dark View • Interactive Workspace</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsDarkMode(!isDarkMode)} 
+                className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                aria-label="Toggle Theme"
+              >
+                {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+              </button>
+              <button onClick={() => setIsModalOpen(true)} className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-white px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 transition-colors">
+                <UserPlus size={16} /> Add Staff Review
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* 3-PANE LAYOUT */}
+        <div className="p-4 md:p-6 max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[900px] h-[calc(100vh-80px)]">
+          
+          {/* PANE 1: GLOBAL CONTROLS (Left) */}
+          <div className="lg:col-span-3 flex flex-col gap-4 h-full overflow-y-auto pr-2 custom-scrollbar">
+            
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-lg shrink-0 transition-colors duration-200">
+              <h2 className="text-lg font-bold flex items-center gap-2 mb-4 text-slate-900 dark:text-white">
+                <Map size={18} className="text-indigo-600 dark:text-indigo-500"/> Market Context
+              </h2>
+              <select value={market} onChange={(e) => setMarket(e.target.value)} className="w-full p-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm text-slate-800 dark:text-slate-200 transition-colors">
+                <option value="Global">Global HQ (Standard)</option>
+                <option value="Singapore">Singapore (Prioritises Compliance)</option>
+                <option value="Vietnam">Vietnam (Boosts Entrepreneurial)</option>
+                <option value="Hong Kong">Hong Kong</option>
+              </select>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-lg flex-grow transition-colors duration-200">
+              <h2 className="text-lg font-bold flex items-center gap-2 mb-4 text-slate-900 dark:text-white">
+                <Sliders size={18} className="text-indigo-600 dark:text-indigo-500"/> Dynamic Weights
+              </h2>
+              <div className="space-y-6">
+                {['culture', 'values', 'job'].map((type) => (
+                  <div key={type}>
+                    <label className="flex justify-between text-sm font-bold mb-2 capitalize text-slate-700 dark:text-slate-300">
+                      <span>{type} Fit</span> <span className="text-indigo-600 dark:text-indigo-400">{weights[type]}%</span>
+                    </label>
+                    <input type="range" min="0" max="100" value={weights[type]} onChange={(e) => setWeights(prev => ({ ...prev, [type]: parseInt(e.target.value) }))} className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-500" />
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setWeights({ culture: 33, values: 33, job: 34 })} className="mt-8 w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg transition-colors">
+                Reset to Equal Weights
+              </button>
+            </div>
+          </div>
+
+          {/* PANE 2: DYNAMIC LIST (Center) */}
+          <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm dark:shadow-lg flex flex-col h-full overflow-hidden transition-colors duration-200">
+            
+            {/* TAB NAVIGATION */}
+            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 transition-colors">
+               <button 
+                  onClick={() => setActiveTab('pipeline')}
+                  className={`flex-1 flex justify-center items-center gap-2 py-4 text-sm font-bold transition-all ${activeTab === 'pipeline' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-500 bg-white dark:bg-slate-800/50' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+               >
+                  <LayoutDashboard size={16}/> Talent Pipeline
+               </button>
+               <button 
+                  onClick={() => setActiveTab('workspace')}
+                  className={`flex-1 flex justify-center items-center gap-2 py-4 text-sm font-bold transition-all ${activeTab === 'workspace' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-500 bg-white dark:bg-slate-800/50' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+               >
+                  <UserCog size={16}/> Manager's Workspace
+               </button>
+            </div>
+
+            {activeTab === 'workspace' && (
+               <div className="h-48 border-b border-slate-200 dark:border-slate-800 p-4 bg-slate-50 dark:bg-slate-950/50 transition-colors">
+                 <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                   <Users size={14}/> Team Alignment Scatter Plot
+                 </h3>
+                 <ResponsiveContainer width="100%" height="100%">
+                   <ScatterChart margin={{ top: 10, right: 10, bottom: -10, left: -20 }}>
+                     <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? "#334155" : "#e2e8f0"} />
+                     <XAxis type="number" dataKey="jobFit" name="Technical Job Fit" domain={[0, 100]} tick={{ fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 10 }} axisLine={{ stroke: isDarkMode ? '#475569' : '#cbd5e1' }} tickLine={false} />
+                     <YAxis type="number" dataKey="cultureFit" name="Cultural Alignment" domain={[0, 100]} tick={{ fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 10 }} axisLine={{ stroke: isDarkMode ? '#475569' : '#cbd5e1' }} tickLine={false} />
+                     <ZAxis type="number" dataKey="total" range={[60, 200]} name="Overall Fit" />
+                     <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<CustomScatterTooltip />} />
+                     <Scatter data={scatterData.filter(d => d.source === 'external')} fill="#94a3b8" fillOpacity={0.6} />
+                     <Scatter data={scatterData.filter(d => d.source === 'internal')} fill="#6366f1" fillOpacity={0.9} />
+                   </ScatterChart>
+                 </ResponsiveContainer>
+               </div>
+            )}
+            
+            <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 backdrop-blur z-10 transition-colors">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                 {activeTab === 'pipeline' ? 'External & Internal Profiles' : 'In-House Staff Only'}
+              </span>
+              <span className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-3 py-1 rounded-full text-slate-700 dark:text-slate-300">
+                {displayList.length} Profiles
+              </span>
+            </div>
+
+            <div className="overflow-y-auto flex-grow custom-scrollbar p-2 divide-y divide-slate-100 dark:divide-slate-800/50 transition-colors">
+              {displayList.map((candidate) => {
+                const isHighMatch = candidate.scores.totalWeighted >= 85;
+                const isPotentialGap = candidate.scores.cultureFit < 65 || candidate.scores.valuesFit < 65;
+                
+                return (
+                  <div key={candidate.id} onClick={() => setSelectedCandidateId(candidate.id)} className={`p-4 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80 group ${selectedCandidateId === candidate.id ? 'bg-slate-50 dark:bg-slate-800 border-l-4 border-l-indigo-500' : 'border-l-4 border-l-transparent'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-bold text-slate-900 dark:text-white text-lg flex items-center gap-2 transition-colors">
+                          {candidate.personalInfo.fullName}
+                          {candidate.hasNoData && <AlertTriangle size={14} className="text-amber-500" title="Suggestive Prompt: Add more detail"/>}
+                        </h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">{candidate.personalInfo.title}</p>
+                      </div>
+                      <div className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 shadow-sm ${isHighMatch ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : candidate.scores.totalWeighted > 70 ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                        {candidate.scores.totalWeighted}% Match
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                       <ProgressBar label="Overall Alignment" value={candidate.scores.totalWeighted} colorClass={isHighMatch ? 'bg-indigo-500' : candidate.scores.totalWeighted > 70 ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'} />
+                    </div>
+
+                    {activeTab === 'pipeline' && (
+                      <div className={`flex gap-2 mt-4 transition-opacity duration-200 ${selectedCandidateId === candidate.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <button className="flex-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-600/20 dark:hover:bg-indigo-600/40 text-indigo-700 dark:text-indigo-400 py-1.5 rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors"><CheckCircle size={14}/> Shortlist</button>
+                        <button className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white py-1.5 rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">Interview</button>
+                        <button className={`flex-1 py-1.5 rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors ${isPotentialGap ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/20 dark:hover:bg-amber-500/40 text-amber-700 dark:text-amber-500' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}><Flag size={14}/> Culture Review</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* PANE 3: DEEP DIVE & VISUALISATION (Right) */}
+          <div className="lg:col-span-4 flex flex-col gap-4 h-full overflow-y-auto custom-scrollbar">
+            
+            {selectedCandidate && (
+              <>
+                {/* Deep Dive Profile Card */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-lg transition-colors duration-200">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900 dark:text-white transition-colors">{selectedCandidate.personalInfo.fullName}</h2>
+                      <p className="text-indigo-600 dark:text-indigo-500 text-sm font-medium flex items-center gap-1 mt-1 transition-colors">
+                        <Briefcase size={14}/> {selectedCandidate.personalInfo.title}
+                      </p>
+                    </div>
+                    <div className={`px-3 py-1 text-xs font-bold rounded-lg border flex items-center gap-1
+                        ${selectedCandidate.mindset === 'Growth' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/30' : 
+                          selectedCandidate.mindset === 'Fixed' ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                      <Brain size={14}/> {selectedCandidate.mindset} Mindset
+                    </div>
+                  </div>
+
+                  {/* The "Hire" Recommendation Text Block */}
+                  <div className="bg-indigo-50/50 dark:bg-slate-800/50 p-4 rounded-lg border border-indigo-100 dark:border-slate-700 mb-5 relative overflow-hidden transition-colors">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                    <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <FileText size={14}/> Recommendation Rationale
+                    </h3>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed transition-colors">
+                      {ScoringEngine.generateRecommendation(selectedCandidate)}
+                    </p>
+                  </div>
+
+                  {/* Job Fit Competencies Section */}
+                  <div className="mb-5">
+                     <h3 className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-2 transition-colors">Job Fit Competencies</h3>
+                     <div className="space-y-2">
+                       <ProgressBar label="Technical & Domain Expertise" value={selectedCandidate.scores.competencies.technical} colorClass="bg-sky-500" />
+                       <ProgressBar label="Industry Experience" value={selectedCandidate.scores.competencies.industry} colorClass="bg-cyan-500" />
+                       <ProgressBar label="Leadership & Influence" value={selectedCandidate.scores.competencies.leadership} colorClass="bg-teal-500" />
+                     </div>
+                  </div>
+
+                  {/* Predicted DISC Section */}
+                  <div className="mb-4">
+                     <h3 className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-2 transition-colors">Predicted DISC Profile</h3>
+                     <div className="grid grid-cols-4 gap-2">
+                       {Object.entries(selectedCandidate.discProfile).map(([key, val]) => (
+                          <div key={key} className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-2 text-center transition-colors">
+                            <div className={`text-lg font-bold ${val > 70 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-900 dark:text-slate-300'}`}>{key.charAt(0).toUpperCase()}</div>
+                            <div className="text-[10px] text-slate-500 uppercase">{key}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{val}%</div>
+                          </div>
+                       ))}
+                     </div>
+                  </div>
+
+                  {/* Values Alignment Section */}
+                  <div>
+                     <h3 className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-2 transition-colors">Values Priority Chain</h3>
+                     <div className="space-y-2">
+                       <ProgressBar label="Customer" value={selectedCandidate.values.Customer} colorClass="bg-blue-500" />
+                       <ProgressBar label="Group" value={selectedCandidate.values.Group} colorClass="bg-purple-500" />
+                       <ProgressBar label="Individual" value={selectedCandidate.values.Individual} colorClass="bg-amber-500" />
+                     </div>
+                  </div>
+                </div>
+
+                {/* Visualisation Card */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-lg flex-grow flex flex-col min-h-[350px] transition-colors duration-200">
+                  {activeTab === 'pipeline' ? (
+                     <>
+                        <h2 className="text-lg font-bold flex items-center gap-2 mb-1 text-slate-900 dark:text-white transition-colors">
+                          <Users size={18} className="text-indigo-600 dark:text-indigo-500"/> Team Map Overlay
+                        </h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 transition-colors">Visualising the Culture Gap against benchmarks.</p>
+                        <div className="flex-grow w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RadarChart cx="50%" cy="50%" outerRadius="65%" data={[
+                              { subject: 'Openness', Target: companyTargetCulture.openness, Team: teamAverageTraits.openness, Candidate: selectedCandidate.scores.rawTraits.openness },
+                              { subject: 'Entrepreneurial', Target: companyTargetCulture.entrepreneurial, Team: teamAverageTraits.entrepreneurial, Candidate: selectedCandidate.scores.rawTraits.entrepreneurial },
+                              { subject: 'Integrity', Target: companyTargetCulture.integrity, Team: teamAverageTraits.integrity, Candidate: selectedCandidate.scores.rawTraits.integrity },
+                              { subject: 'Professionalism', Target: companyTargetCulture.professionalism, Team: teamAverageTraits.professionalism, Candidate: selectedCandidate.scores.rawTraits.professionalism },
+                              { subject: 'Growth Mindset', Target: companyTargetCulture.growthMindset, Team: teamAverageTraits.growthMindset, Candidate: selectedCandidate.growthMindsetScore },
+                            ]}>
+                              <PolarGrid stroke={isDarkMode ? "#334155" : "#e2e8f0"} />
+                              <PolarAngleAxis dataKey="subject" tick={{ fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 11 }} />
+                              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                              <Radar name="Target Culture" dataKey="Target" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.1} strokeDasharray="3 3" />
+                              <Radar name="Team Average" dataKey="Team" stroke="#64748b" fill="#64748b" fillOpacity={0.2} />
+                              <Radar name="Candidate" dataKey="Candidate" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
+                              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                              <Tooltip contentStyle={{ backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', borderColor: isDarkMode ? '#334155' : '#e2e8f0', borderRadius: '8px', fontSize: '12px', color: isDarkMode ? '#f8fafc' : '#0f172a' }} itemStyle={{ color: isDarkMode ? '#e2e8f0' : '#475569' }} />
+                            </RadarChart>
+                          </ResponsiveContainer>
+                        </div>
+                     </>
+                  ) : (
+                     <>
+                        <h2 className="text-lg font-bold flex items-center gap-2 mb-1 text-slate-900 dark:text-white transition-colors">
+                          <UserCog size={18} className="text-indigo-600 dark:text-indigo-500"/> DISC vs Company Benchmark
+                        </h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 transition-colors">Staff assessment comparing internal profile against expected organisational norms.</p>
+                        <div className="flex-grow w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={[
+                              { trait: 'Dominance', Benchmark: companyDISCBenchmark.dominance, Staff: selectedCandidate.discProfile.dominance },
+                              { trait: 'Influence', Benchmark: companyDISCBenchmark.influence, Staff: selectedCandidate.discProfile.influence },
+                              { trait: 'Steadiness', Benchmark: companyDISCBenchmark.steadiness, Staff: selectedCandidate.discProfile.steadiness },
+                              { trait: 'Compliance', Benchmark: companyDISCBenchmark.compliance, Staff: selectedCandidate.discProfile.compliance },
+                            ]} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? "#334155" : "#e2e8f0"} vertical={false} />
+                              <XAxis dataKey="trait" tick={{ fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 11 }} axisLine={{ stroke: isDarkMode ? '#475569' : '#cbd5e1' }} tickLine={false} />
+                              <YAxis domain={[0, 100]} tick={{ fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                              <Tooltip cursor={{ fill: isDarkMode ? '#1e293b' : '#f1f5f9' }} contentStyle={{ backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', borderColor: isDarkMode ? '#334155' : '#e2e8f0', borderRadius: '8px', fontSize: '12px', color: isDarkMode ? '#f8fafc' : '#0f172a' }} />
+                              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                              <Bar name="Organisational Benchmark" dataKey="Benchmark" fill={isDarkMode ? "#64748b" : "#94a3b8"} radius={[4, 4, 0, 0]} barSize={30} />
+                              <Bar name="In-House Staff" dataKey="Staff" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={30} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                     </>
+                  )}
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+
+        <ReviewModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+
+        <style dangerouslySetInnerHTML={{__html: `
+          .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: ${isDarkMode ? '#334155' : '#cbd5e1'}; border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${isDarkMode ? '#475569' : '#94a3b8'}; }
+        `}} />
+      </div>
+    </div>
+  );
+}
