@@ -1,24 +1,29 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Canvas App</title>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insights Horizon Canvas</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <script src="https://unpkg.com/recharts/擔/Recharts.js"></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // PROTECT THE PAGE
+        // 1. PASSWORD GATE (Runs immediately)
         const pass = prompt("Please enter the access code:");
         if (pass !== "InsightsHorizon") {
-            document.body.innerHTML = "<h1>Access Denied</h1>";
+            document.getElementById('root').innerHTML = `
+                <div style="display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
+                    <h1 style="color:red;">Access Denied</h1>
+                </div>`;
             window.location.href = "https://google.com";
         } else {
-
+            // 2. DEFINE COMPONENTS (Destructure from Global Variables)
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, 
@@ -637,20 +642,9 @@ export default function App() {
     </div>
   );
 }
+            };
 
-
-            const { useState, useEffect } = React;
-            const { Radar, RadarChart, ResponsiveContainer } = Recharts;
-
-            function App() {
-                return (
-                    <div style={{ padding: '20px' }}>
-                        <h1>My Canvas App</h1>
-                        {/* Your component logic here */}
-                    </div>
-                );
-            }
-
+            // 3. RENDER
             const root = ReactDOM.createRoot(document.getElementById('root'));
             root.render(<App />);
         }
