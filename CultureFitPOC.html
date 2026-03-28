@@ -7,6 +7,13 @@ import {
 } from 'recharts';
 import { Sliders, Map, Target, Search, PlusCircle, Briefcase, Award, AlertTriangle, CheckCircle, Flag, UserPlus, X, Users, Brain, LayoutDashboard, UserCog, FileText, Sun, Moon } from 'lucide-react';
 
+// A very basic "gate" - not for high-security, but stops casual browsing
+const pass = prompt("Please enter the access code:");
+if (pass !== "InsightsHorizon") {
+  document.body.innerHTML = "<h1>Access Denied</h1>";
+  window.location.href = "https://google.com";
+}
+
 // ============================================================================
 // 1. DATA LAYER & BENCHMARKS
 // ============================================================================
